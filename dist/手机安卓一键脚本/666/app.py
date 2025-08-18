@@ -167,4 +167,91 @@ if FASTAPI_AVAILABLE:
         
         if valid_responses: return max(valid_responses, key=lambda x: x['token_count'])['result']
         
-        total_err = sum(
+        total_err = sum(errors.values())
+        if total_err == 0 and keys: raise HTTPException(502, {"error": "所有API请求均成功，但未返回有效内容或内容过短。", "solution": f"模型可能生成了空回复。最小要求长度为 {min_len} 字符。"})
+        if errors["auth"] == total_err: raise HTTPException(401, {"error": "所有上游API密钥均认证失败。", "solution": "请检查您在config.ini中的API密钥是否正确、有效或已绑定支付方式。"})
+        if errors["rate_limit"] == total_err: raise HTTPException(429, {"error": "所有上游API密钥均达到速率限制。", "solution": "请稍后再试，或更换一批API密钥。"})
+        if errors["timeout"] == total_err: raise HTTPException(504, {"error": "无法连接到上游API供应商。", "solution": "请检查服务器的网络连接以及config.ini中的 `base_url` 是否正确。"})
+        raise HTTPException(503, {"error": "多个上游API请求失败，原因各不相同。", "report": f"失败统计: {errors['auth']}个认证失败, {errors['rate_limit']}个速率限制, {errors['timeout']}个连接超时, {errors['other']}个其他错误。"})
+
+    async def stream_response_content(result: dict):
+        content = result["choices"][0]["message"]["content"]; resp_id, created, model = result.get("id", f"c-{int(time.time())}"), int(time.time()), result.get("model", "gemini-pro")
+        async def gen():
+            for i in range(0, len(content), max(1, len(content) // 50)): yield f"data: {json.dumps({'id': resp_id, 'created': created, 'model': model, 'choices': [{'delta': {'content': content[i:i + max(1, len(content) // 50)]}}]})}\n\n"; await asyncio.sleep(0.01)
+            yield f"data: {json.dumps({'id': resp_id, 'created': created, 'model': model, 'choices': [{'delta': {}, 'finish_reason': 'stop'}]})}\n\n"; yield "data: [DONE]\n\n"
+        return StreamingResponse(gen(), media_type="text/event-stream")
+
+    @app_fastapi.post("/v1/chat/completions")
+    async def chat_completions_proxy(req: ChatRequest, http_req: Request):
+        try:
+            auth = http_req.headers.get("Authorization", "").split(" ")
+            if len(auth)!=2 or auth[0]!="Bearer" or auth[1]!=config_manager.get_server_config()['api_key']: raise HTTPException(401, "API密钥无效或格式不正确。")
+            data = await http_req.json(); best_resp = await process_api_requests(data)
+            return await stream_response_content(best_resp) if req.stream else JSONResponse(best_resp)
+        except HTTPException: raise
+        except Exception as e: log_and_print_error(e, "处理聊天请求时发生未知内部错误。"); raise HTTPException(500, "服务器内部错误")
+
+    # ==================== Web UI 和配置 API ====================
+    static_path = get_resource_path("static")
+    templates_path = get_resource_path("templates")
+    os.makedirs(static_path, exist_ok=True); os.makedirs(templates_path, exist_ok=True)
+    app_fastapi.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+    templates = Jinja2Templates(directory=str(templates_path))
+    is_api_server_running = True
+
+    @app_fastapi.get("/", response_class=HTMLResponse)
+    async def read_root_html(request: Request):
+        index_path = templates_path / "index.html"
+        if not index_path.exists():
+            return HTMLResponse("<h1>错误：未找到界面文件</h1><p>请确保 'templates/index.html' 文件与您的Python脚本在同一目录下。</p>", status_code=404)
+        return templates.TemplateResponse("index.html", {"request": request})
+
+    @app_fastapi.get("/api/config")
+    async def get_config():
+        try: return {'server': config_manager.get_server_config(), 'api_keys': config_manager.get_api_keys(), 'base_url': config_manager.get_base_url()}
+        except Exception as e: log_and_print_error(e, "获取配置失败。"); raise HTTPException(500, str(e))
+
+    @app_fastapi.post("/api/config")
+    async def save_config_api(request: Request):
+        try:
+            data = await request.json()
+            if 'server' in data: config_manager.set_server_config(**data['server'])
+            if 'api_keys' in data: config_manager.set_api_keys(**data['api_keys'])
+            if 'base_url' in data: config_manager.set_base_url(data['base_url'])
+            return {'success': True, 'message': '配置已保存并立即生效'}
+        except Exception as e: log_and_print_error(e, "保存配置失败。"); raise HTTPException(500, str(e))
+    
+    @app_fastapi.get("/api/server/status")
+    async def get_server_status(): return {'is_running': is_api_server_running}
+
+# ==================== 主程序入口 ====================
+def main():
+    print("正在启动LLM代理服务 (全中文最终修复版)...")
+    setup_termux_environment()
+    try: import uvicorn
+    except ImportError: print("[处理办法]：请运行 'pip install uvicorn' 来安装Web服务器。"); sys.exit(1)
+
+    try:
+        server_config = config_manager.get_server_config()
+        web_host, web_port = server_config['web_host'], server_config['web_port']
+        
+        if not check_port_available(web_host, web_port):
+            print(f"\n[警告]：端口 {web_port} 已被占用。")
+            if is_termux_environment():
+                alt_port = web_port + 1
+                if check_port_available(web_host, alt_port): print(f"[处理办法]：将自动尝试使用备用端口 {alt_port}。"); server_config.update({'web_port': alt_port, 'port': alt_port}); config_manager.set_server_config(**server_config); web_port = alt_port
+                else: print(f"[处理办法]：备用端口 {alt_port} 也被占用。请在 config.ini 文件中手动指定一个未被占用的端口。"); sys.exit(1)
+            else: print(f"[处理办法]：请关闭占用端口 {web_port} 的程序，或在 config.ini 中修改 'web_port' 和 'port' 的值。"); sys.exit(1)
+
+        script_name, app_string = Path(__file__).stem, f"{Path(__file__).stem}:app_fastapi"
+        print(f"\n服务启动成功！")
+        print(f"管理界面: http://{web_host}:{web_port}/")
+        print(f"API 端点: http://{server_config['host']}:{server_config['port']}/v1/chat/completions")
+        
+        uvicorn.run(app_string, host=web_host, port=web_port, log_level="info", reload=False, workers=1 if is_termux_environment() else None)
+    except Exception as e:
+        log_and_print_error(e, "启动服务时发生严重错误，程序已退出。请根据上面的技术细节排查问题。")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

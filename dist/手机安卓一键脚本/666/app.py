@@ -101,13 +101,13 @@ class ConfigManager:
             default_port = '5000'
             default_host = '0.0.0.0'
             default_timeout = '120'
-            default_min_length = '300'
+            default_min_length = '3500'
             default_web_port = '5000'
         else:
             default_port = '5000'
             default_host = '127.0.0.1'
             default_timeout = '180'
-            default_min_length = '400'
+            default_min_length = '3500'
             default_web_port = '5000'
         
         self.config['SERVER'] = {

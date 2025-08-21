@@ -98,6 +98,7 @@ A: 目前支持Windows 10/11系统
 
 <p align="center">
   <img src="./微信图片_20250814082355.jpg" alt="QQ群二维码" width="300"/>
+  <img src="./微信图片_20250819180711.jpg" alt="QQ群二维码" width="300"/>
 </p>
 
 ---

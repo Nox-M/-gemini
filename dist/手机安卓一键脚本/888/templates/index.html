@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM反截断代理服务 - Termux版</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .mobile-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .mobile-nav {
+            background: white;
+            padding: 0.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .nav-btn {
+            border: none;
+            background: none;
+            padding: 0.5rem 1rem;
+            margin: 0.25rem;
+            border-radius: 0.5rem;
+            transition: all 0.3s ease;
+        }
+        .nav-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        .nav-btn:hover {
+            background: #e9ecef;
+        }
+        .nav-btn.active:hover {
+            background: #5a6fd8;
+        }
+        .content-card {
+            background: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+        .card-header-custom {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .card-body-custom {
+            padding: 1rem;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        .status-running { background-color: #28a745; }
+        .status-stopped { background-color: #dc3545; }
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .btn-primary {
+            background: #667eea;
+            border-color: #667eea;
+        }
+        .btn-primary:hover {
+            background: #5a6fd8;
+            border-color: #5a6fd8;
+        }
+        .mobile-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .quick-action-btn {
+            width: 100%;
+            margin-bottom: 0.5rem;
+            padding: 1rem;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- 移动端头部 -->
+    <div class="mobile-header">
+        <h4><i class="fas fa-robot"></i> LLM反截断代理服务</h4>
+        <small class="text-light">Termux优化版</small>
+    </div>
+
+    <!-- 移动端导航 -->
+    <div class="mobile-nav">
+        <div class="d-flex flex-wrap justify-content-center">
+            <button class="nav-btn active" data-tab="quick-start">
+                <i class="fas fa-rocket"></i> 快速启动
+            </button>
+            <button class="nav-btn" data-tab="basic">
+                <i class="fas fa-cog"></i> 基础配置
+            </button>
+            <button class="nav-btn" data-tab="api-keys">
+                <i class="fas fa-key"></i> API密钥
+            </button>
+            <button class="nav-btn" data-tab="status">
+                <i class="fas fa-chart-line"></i> 状态
+            </button>
+        </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="container-fluid" style="padding-bottom: 100px;">
+        <!-- 显眼的图片展示 -->
+        <div class="text-center mb-4">
+            <img src="/static/images/9b9df8f742b9d1e8c30beff89f07e56.jpg" alt="LLM代理服务" style="width: 200px; height: 200px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        </div>
+        
+        <!-- 状态指示器 -->
+        <div class="content-card">
+            <div class="card-body-custom text-center">
+                <div class="d-flex align-items-center justify-content-center">
+                    <span id="status-indicator" class="status-indicator status-stopped"></span>
+                    <span id="status-text">服务运行</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 快速启动标签页 -->
+        <div id="quick-start-tab" class="tab-content active">
+            <div class="content-card">
+                <div class="card-header-custom">
+                    <h5><i class="fas fa-rocket"></i> 快速启动</h5>
+                </div>
+                <div class="card-body-custom">
+                    <button id="quick-start-btn" class="btn btn-success quick-action-btn">
+                        <i class="fas fa-play"></i> 赛博木鱼，点击按钮功德加一（手动狗头）
+                    </button>
+                    <button id="quick-stop-btn" class="btn btn-danger quick-action-btn" disabled>
+                        <i class="fas fa-stop"></i> 停止服务
+                    </button>
+                    
+                    <div class="alert alert-info mt-3">
+                        <h6><i class="fas fa-info-circle"></i> 使用说明</h6>
+                        <small>
+                            <p>• 已经成功启动欢迎加入Q群：1033083986</p>
+                            <p>• 统一端口: <code>http://localhost:5000</code></p>
+                            <p>• url: <code>http://127.0.0.1:5000/v1</code></p>
+                            <p>• API密钥: <code id="current-api-key">123</code></p>
+                            <p>• 管理界面和API使用相同端口</p>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 基础配置标签页 -->
+        <div id="basic-tab" class="tab-content">
+            <div class="content-card">
+                <div class="card-header-custom">
+                    <h5><i class="fas fa-cog"></i> 基础配置</h5>
+                </div>
+                <div class="card-body-custom">
+                    <form id="server-config-form">
+                        <div class="mb-3">
+                            <label for="api-port" class="form-label">端口</label>
+                            <input type="number" class="form-control" id="api-port" value="8080">
+                        </div>
+                        <div class="mb-3">
+                            <label for="api-host" class="form-label">主机</label>
+                            <input type="text" class="form-control" id="api-host" value="0.0.0.0">
+                        </div>
+                        <div class="mb-3">
+                            <label for="api-key" class="form-label">API密钥</label>
+                            <input type="password" class="form-control" id="api-key" value="123">
+                        </div>
+                        <div class="mb-3">
+                            <label for="min-length" class="form-label">最小响应长度</label>
+                            <input type="number" class="form-control" id="min-length" value="400">
+                        </div>
+                        <div class="mb-3">
+                            <label for="timeout" class="form-label">超时时间(秒)</label>
+                            <input type="number" class="form-control" id="timeout" value="180">
+                        </div>
+                        <div class="mb-3">
+                            <label for="base-url" class="form-label">基础URL</label>
+                            <input type="text" class="form-control" id="base-url" value="https://generativelanguage.googleapis.com/v1beta">
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- API密钥管理标签页 -->
+        <div id="api-keys-tab" class="tab-content">
+            <div class="content-card">
+                <div class="card-header-custom">
+                    <h5><i class="fas fa-key"></i> 第一组API密钥</h5>
+                </div>
+                <div class="card-body-custom">
+                    <textarea class="form-control" id="group1-keys" rows="6" placeholder="每行一个API密钥"></textarea>
+                </div>
+            </div>
+            
+            <div class="content-card">
+                <div class="card-header-custom">
+                    <h5><i class="fas fa-key"></i> 第二组API密钥</h5>
+                </div>
+                <div class="card-body-custom">
+                    <textarea class="form-control" id="group2-keys" rows="6" placeholder="每行一个API密钥"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- 服务状态标签页 -->
+        <div id="status-tab" class="tab-content">
+            <div class="content-card">
+                <div class="card-header-custom">
+                    <h5><i class="fas fa-info-circle"></i> 服务信息</h5>
+                </div>
+                <div class="card-body-custom">
+                    <div class="mb-3">
+                        <strong>API服务状态:</strong>
+                        <span id="api-status" class="badge bg-secondary">运行</span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>API服务地址:</strong>
+                        <span id="api-url">-</span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Web服务地址:</strong>
+                        <span id="web-url">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 移动端底部操作栏 -->
+    <div class="mobile-footer">
+        <div class="d-flex gap-2">
+            <button id="save-config-btn" class="btn btn-primary flex-fill">
+                <i class="fas fa-save"></i> 保存
+            </button>
+            <button id="reload-config-btn" class="btn btn-secondary flex-fill">
+                <i class="fas fa-refresh"></i> 重载
+            </button>
+        </div>
+    </div>
+
+    <!-- 通知容器 -->
+    <div id="notification-container"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/app.js"></script>
+    
+    <script>
+        // 移动端优化的脚本
+        document.addEventListener('DOMContentLoaded', function() {
+            const quickStartBtn = document.getElementById('quick-start-btn');
+            const quickStopBtn = document.getElementById('quick-stop-btn');
+            
+            // 更新当前API密钥显示
+            function updateApiKeyDisplay() {
+                const apiKeyInput = document.getElementById('api-key');
+                const currentApiKey = document.getElementById('current-api-key');
+                if (apiKeyInput && currentApiKey) {
+                    currentApiKey.textContent = apiKeyInput.value || '123';
+                }
+            }
+            
+            // 监听API密钥变化
+            const apiKeyInput = document.getElementById('api-key');
+            if (apiKeyInput) {
+                apiKeyInput.addEventListener('input', updateApiKeyDisplay);
+            }
+            
+            // 快速启动按钮
+            if (quickStartBtn) {
+                quickStartBtn.addEventListener('click', function() {
+                    if (window.llmProxyApp) {
+                        window.llmProxyApp.startServer();
+                    }
+                });
+            }
+            
+            // 快速停止按钮
+            if (quickStopBtn) {
+                quickStopBtn.addEventListener('click', function() {
+                    if (window.llmProxyApp) {
+                        window.llmProxyApp.stopServer();
+                    }
+                });
+            }
+            
+            // 同步按钮状态
+            const originalUpdateServerButtons = window.llmProxyApp?.updateServerButtons;
+            if (originalUpdateServerButtons) {
+                window.llmProxyApp.updateServerButtons = function(isRunning) {
+                    originalUpdateServerButtons.call(window.llmProxyApp, isRunning);
+                    if (quickStartBtn) quickStartBtn.disabled = isRunning;
+                    if (quickStopBtn) quickStopBtn.disabled = !isRunning;
+                };
+            }
+            
+            // 初始化显示
+            updateApiKeyDisplay();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# LLM代理服务 - Termux优化依赖包
+# 针对Termux环境优化的依赖版本
+
+# Web框架 - 使用兼容版本
+flask>=2.0.0,<3.0.0
+flask-cors>=4.0.0
+flask-socketio>=5.0.0,<6.0.0
+
+# API服务 - 使用轻量级版本
+fastapi>=0.100.0,<0.110.0
+uvicorn[standard]>=0.20.0,<0.25.0
+httpx>=0.24.0,<0.26.0
+pydantic>=2.0.0,<3.0.0
+python-multipart>=0.0.5
+
+# 其他依赖
+requests>=2.28.0,<3.0.0
+configparser>=5.0.0
+
+# Termux特定依赖
+psutil>=5.9.0  # 用于进程管理

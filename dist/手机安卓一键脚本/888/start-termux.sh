@@ -157,13 +157,19 @@ start_service() {
     cd "$PROJECT_DIR"
     
     print_info "启动服务中..."
-    nohup /data/data/com.termux/files/usr/bin/python3 app.py > "$LOG_DIR/llm-proxy.log" 2>&1 &
+    print_info "HTTP状态码将同时显示在终端和日志中..."
+    
+    # 创建日志目录
+    mkdir -p "$LOG_DIR"
+    
+    # 启动服务并同时输出到终端和日志文件
+    /data/data/com.termux/files/usr/bin/python3 app.py 2>&1 | tee "$LOG_DIR/llm-proxy.log" &
     
     local pid=$!
     echo $pid > "$PID_FILE"
     
     # 等待服务启动
-    sleep 5
+    sleep 3
     
     # 检查服务是否成功启动
     if kill -0 "$pid" 2>/dev/null; then
@@ -175,9 +181,11 @@ start_service() {
         print_info "管理界面: http://localhost:$port/"
         print_info "API端点: http://localhost:$port/v1/chat/completions"
         
-        # 测试服务响应
-        if curl -s "http://localhost:$port/" > /dev/null; then
+        # 测试服务响应并显示HTTP状态码
+        local response=$(curl -s -w "HTTP状态码: %{http_code}" "http://localhost:$port/" 2>/dev/null)
+        if [[ $? -eq 0 ]]; then
             print_info "服务响应测试通过 ✓"
+            print_info "$response"
         else
             print_warning "服务响应测试失败，请检查日志"
         fi
@@ -302,8 +310,8 @@ show_help() {
     echo
     echo "示例:"
     echo "  $0 start                    # 启动服务"
-    echo "  tail -n 100 /data/data/com.termux/files/home/.llm-proxy/logs/llm-proxy.log               # 查看最近100行日志"
-    echo "  tail -f /data/data/com.termux/files/home/.llm-proxy/logs/llm-proxy.log                 # 查看服务状态"
+    echo "  $0 logs 100                # 查看最近100行日志"
+    echo "  $0 status                  # 查看服务状态"
     echo
 }
 

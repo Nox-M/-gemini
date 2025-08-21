@@ -1,0 +1,64 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# LLM代理服务 - Termux服务启动脚本
+# 该脚本用于在Termux中以服务形式运行LLM代理服务
+
+# 设置工作目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_DIR"
+
+# 设置日志目录
+LOG_DIR="$HOME/.llm-proxy/logs"
+mkdir -p "$LOG_DIR"
+
+# 设置日志文件
+LOG_FILE="$LOG_DIR/llm-proxy.log"
+ERROR_LOG="$LOG_DIR/llm-proxy-error.log"
+
+# 设置Python路径
+export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+
+# 检查Python环境
+if ! command -v python &> /dev/null; then
+    echo "错误: Python未安装，请先运行: pkg install python" >&2
+    exit 1
+fi
+
+# 检查依赖是否安装
+if [ ! -f "$PROJECT_DIR/requirements_installed" ]; then
+    echo "正在安装依赖..." >> "$LOG_FILE"
+    pip install -r requirements.txt >> "$LOG_FILE" 2>&1
+    if [ $? -eq 0 ]; then
+        touch "$PROJECT_DIR/requirements_installed"
+        echo "依赖安装完成" >> "$LOG_FILE"
+    else
+        echo "依赖安装失败，请检查日志: $LOG_FILE" >&2
+        exit 1
+    fi
+fi
+
+# 启动服务
+echo "$(date): 启动LLM代理服务..." >> "$LOG_FILE"
+
+# 使用nohup确保进程在后台运行
+nohup python app.py cli \
+    >> "$LOG_FILE" 2>> "$ERROR_LOG" &
+
+# 获取进程ID
+PID=$!
+
+# 保存PID到文件
+echo $PID > "$LOG_DIR/llm-proxy.pid"
+
+# 等待进程启动
+sleep 3
+
+# 检查进程是否仍在运行
+if kill -0 $PID 2>/dev/null; then
+    echo "$(date): LLM代理服务启动成功，PID: $PID" >> "$LOG_FILE"
+    echo "LLM代理服务已启动，日志文件: $LOG_FILE"
+else
+    echo "$(date): LLM代理服务启动失败" >> "$LOG_FILE"
+    echo "服务启动失败，请检查日志: $LOG_FILE" >&2
+    exit 1
+fi

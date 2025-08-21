@@ -1,0 +1,18 @@
+# LLM代理服务 - Termux版 依赖包
+# 专为Android Termux环境优化
+
+# API服务和Web框架 - 使用兼容Termux的版本
+fastapi>=0.100.0
+uvicorn>=0.20.0
+httpx>=0.24.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
+
+# 静态文件服务
+aiofiles>=0.8.0
+
+# 其他依赖 - 移除不必要的依赖以减少Termux环境负担
+# requests==2.31.0  # 已有httpx，不需要requests
+
+# Termux环境优化依赖
+jinja2>=3.1.0  # 模板引擎

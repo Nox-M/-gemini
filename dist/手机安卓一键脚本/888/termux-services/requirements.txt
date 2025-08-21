@@ -1,0 +1,17 @@
+# LLM代理服务 - Web版 依赖包
+
+# Web框架
+flask==2.3.3
+flask-cors==4.0.0
+flask-socketio==5.3.6
+
+# API服务
+fastapi==0.104.1
+uvicorn==0.24.0
+httpx==0.25.2
+pydantic==2.5.0
+python-multipart==0.0.6
+
+# 其他依赖
+requests==2.31.0
+configparser==6.0.0

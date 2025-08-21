@@ -1,0 +1,186 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# LLM代理服务 - Termux服务启动脚本（优化版）
+# 针对Termux环境优化的守护进程脚本
+
+# 设置工作目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_DIR"
+
+# 设置日志目录
+LOG_DIR="$HOME/.llm-proxy/logs"
+mkdir -p "$LOG_DIR"
+
+# 设置日志文件
+LOG_FILE="$LOG_DIR/llm-proxy.log"
+ERROR_LOG="$LOG_DIR/llm-proxy-error.log"
+PID_FILE="$LOG_DIR/llm-proxy.pid"
+
+# 设置Python路径
+export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+export PYTHONUNBUFFERED=1  # 确保日志实时输出
+
+# 检查Python环境
+if ! command -v python &> /dev/null; then
+    echo "错误: Python未安装，请先运行: pkg install python" >&2
+    exit 1
+fi
+
+# 检查端口是否被占用
+check_port() {
+    local port=$1
+    if command -v netstat &> /dev/null; then
+        if netstat -tuln | grep -q ":$port "; then
+            return 1  # 端口被占用
+        fi
+    fi
+    return 0  # 端口可用
+}
+
+# 查找可用端口
+find_available_port() {
+    local start_port=$1
+    local port=$start_port
+    while [ $port -le $((start_port + 100)) ]; do
+        if check_port $port; then
+            echo $port
+            return 0
+        fi
+        ((port++))
+    done
+    echo $start_port  # 如果找不到可用端口，返回原始端口
+}
+
+# 配置端口
+configure_ports() {
+    local config_file="$PROJECT_DIR/config.ini"
+    local api_port=$(find_available_port 8080)
+    local web_port=$(find_available_port 5001)
+    
+    # 如果端口被占用，更新配置文件
+    if [ "$api_port" != "8080" ] || [ "$web_port" != "5001" ]; then
+        echo "检测到端口冲突，正在调整端口配置..." >> "$LOG_FILE"
+        sed -i "s/port = 8080/port = $api_port/" "$config_file"
+        sed -i "s/web_port = 5001/web_port = $web_port/" "$config_file"
+        echo "API端口调整为: $api_port" >> "$LOG_FILE"
+        echo "Web端口调整为: $web_port" >> "$LOG_FILE"
+    fi
+}
+
+# 检查并安装依赖
+install_dependencies() {
+    local requirements_file="$PROJECT_DIR/termux-services/requirements-termux.txt"
+    
+    if [ ! -f "$PROJECT_DIR/requirements_installed" ]; then
+        echo "$(date): 正在检查并安装依赖..." >> "$LOG_FILE"
+        
+        # 升级pip
+        python -m pip install --upgrade pip >> "$LOG_FILE" 2>&1
+        
+        # 安装依赖
+        if [ -f "$requirements_file" ]; then
+            pip install -r "$requirements_file" >> "$LOG_FILE" 2>&1
+            if [ $? -eq 0 ]; then
+                touch "$PROJECT_DIR/requirements_installed"
+                echo "$(date): 依赖安装完成" >> "$LOG_FILE"
+            else
+                echo "$(date): 依赖安装失败" >> "$ERROR_LOG"
+                return 1
+            fi
+        else
+            echo "$(date): 依赖文件不存在: $requirements_file" >> "$ERROR_LOG"
+            return 1
+        fi
+    else
+        echo "$(date): 依赖已安装，跳过安装步骤" >> "$LOG_FILE"
+    fi
+    
+    return 0
+}
+
+# 检查服务是否已在运行
+check_running() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "$(date): 服务已在运行，PID: $pid" >> "$LOG_FILE"
+            return 0
+        else
+            rm -f "$PID_FILE"
+        fi
+    fi
+    return 1
+}
+
+# 启动服务
+start_service() {
+    echo "$(date): 启动LLM代理服务..." >> "$LOG_FILE"
+    
+    # 配置端口
+    configure_ports
+    
+    # 启动服务
+    python app.py cli >> "$LOG_FILE" 2>> "$ERROR_LOG" &
+    local pid=$!
+    
+    # 保存PID
+    echo $pid > "$PID_FILE"
+    
+    # 等待服务启动
+    sleep 5
+    
+    # 检查服务是否成功启动
+    local max_attempts=10
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        if kill -0 $pid 2>/dev/null; then
+            # 检查端口是否监听
+            if command -v netstat &> /dev/null; then
+                local api_port=$(grep -E "^port\s*=" "$PROJECT_DIR/config.ini" | cut -d'=' -f2 | tr -d ' ')
+                if netstat -tuln | grep -q ":$api_port "; then
+                    echo "$(date): LLM代理服务启动成功，PID: $pid，端口: $api_port" >> "$LOG_FILE"
+                    return 0
+                fi
+            else
+                echo "$(date): LLM代理服务启动成功，PID: $pid" >> "$LOG_FILE"
+                return 0
+            fi
+        fi
+        
+        sleep 2
+        ((attempt++))
+    done
+    
+    echo "$(date): LLM代理服务启动失败" >> "$ERROR_LOG"
+    rm -f "$PID_FILE"
+    return 1
+}
+
+# 主程序
+main() {
+    # 检查是否已在运行
+    if check_running; then
+        exit 0
+    fi
+    
+    # 安装依赖
+    if ! install_dependencies; then
+        exit 1
+    fi
+    
+    # 启动服务
+    if start_service; then
+        echo "LLM代理服务已启动"
+        echo "查看日志: tail -f $LOG_FILE"
+    else
+        echo "服务启动失败，请检查日志: $ERROR_LOG"
+        exit 1
+    fi
+}
+
+# 处理信号
+trap 'echo "$(date): 收到停止信号"; rm -f "$PID_FILE"; exit 0' SIGTERM SIGINT
+
+# 运行主程序
+main

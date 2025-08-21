@@ -603,6 +603,7 @@ def main():
             host=server_config['web_host'],
             port=server_config['web_port'],
             debug=True  # 启用调试模式，支持热重载
+            allow_unsafe_werkzeug=True # 添加此参数以解决报错
         )
 
 if __name__ == "__main__":
